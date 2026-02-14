@@ -1,0 +1,20 @@
+{
+    "licenses": {
+        "7B774CFC": {
+            "user": "TEST",
+            "hwid": "Ivan-vanad",
+            "expiry": "2026-02-13 16:44"
+        }
+    },
+    "logs": [
+        "[12.02 16:44] Ключ 7B774CFC (TEST) выдан на 1 дн.",
+        "[12.02 16:42] Ключ 3808AFCF (TEST) выдан на 1 дн.",
+        "[12.02 16:38] Ключ 92D3AEEC (TEST) выдан на 1 дн.",
+        "[12.02 16:35] Ключ FA5E3FB3 (TEST) выдан на 1 дн."
+    ],
+    "design": {
+        "title": "HUNTER PRO",
+        "notification": "",
+        "logo": ""
+    }
+}
