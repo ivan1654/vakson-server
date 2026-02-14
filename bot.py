@@ -8,16 +8,19 @@ import json
 import requests
 import subprocess
 import socket
+import sys
 import tkinter as tk
 from tkinter import messagebox
 from telebot import types
 
 # --- КОНФИГУРАЦИЯ ---
 SERVER_URL = "https://vakson-server.onrender.com"
+HEADERS = {"ngrok-skip-browser-warning": "true"}
 API_TOKEN = '8463606697:AAEDD-2_SE3Fz369yw8PpfqwYLJtmp8Z5_Q'
-CHAT_ID = '1277953361'  # Твой личный ID для отчетов
+CHAT_ID = '1277953361'  # Твой ID для отчетов
 
 bot_tg = telebot.TeleBot(API_TOKEN)
+pyautogui.PAUSE = 0.01
 
 # Состояния
 is_hunting = False
@@ -26,11 +29,14 @@ stream_wait_time = 5
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SETTINGS_FILE = os.path.join(BASE_DIR, 'settings.json')
+SESSION_FILE = os.path.join(BASE_DIR, 'session.json')
 
-# Координаты (подгрузятся из файла)
+# Координаты
 areas = {'icon_area': None, 'btn_area': None, 'timer_area': None}
 points = {'icon_click': None}
 
+
+# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 
 def get_hwid():
     try:
@@ -58,109 +64,148 @@ def load_settings():
             pass
 
 
+def save_session(key):
+    with open(SESSION_FILE, 'w') as f:
+        json.dump({'key': key}, f)
+
+
+def load_session():
+    if os.path.exists(SESSION_FILE):
+        try:
+            with open(SESSION_FILE, 'r') as f:
+                return json.load(f).get('key')
+        except:
+            return None
+    return None
+
+
 load_settings()
 
 
-# --- ТЕЛЕГРАМ КЛАВИАТУРЫ ---
-def main_k():
-    m = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    m.add('▶️ ПУСК', '🛑 СТОП')
-    m.add('📸 Скриншот', '📊 Инфо')
-    m.add('⚙️ Настройка зон')
-    return m
+# --- ЛОГИКА АВТО-НАСТРОЙКИ ЧЕРЕЗ ТГ ---
+
+def run_setup_logic(message):
+    bot_tg.send_message(message.chat.id,
+                        "🎯 **Начинаем настройку.**\nУ тебя есть 5 секунд, чтобы навести мышку на нужную точку.")
+
+    # Шаг 1: Сундук
+    time.sleep(5)
+    p_icon = pyautogui.position()
+    points['icon_click'] = [p_icon.x, p_icon.y]
+    areas['icon_area'] = [p_icon.x - 25, p_icon.y - 25, 50, 50]
+    bot_tg.send_message(message.chat.id, f"✅ Точка клика сохранена: {p_icon.x}, {p_icon.y}")
+
+    # Шаг 2: Таймер
+    bot_tg.send_message(message.chat.id, "⏱ Теперь наведи на ТАЙМЕР (внутри открытого сундука) и подожди 5 сек...")
+    time.sleep(5)
+    p_timer = pyautogui.position()
+    areas['timer_area'] = [p_timer.x - 40, p_timer.y - 10, 80, 20]
+
+    save_settings()
+    bot_tg.send_message(message.chat.id, "🚀 **Настройка готова!** Можно запускать охоту.", reply_markup=main_k())
 
 
-# --- ЛОГИКА АВТО-НАСТРОЙКИ ---
-def start_setup(message):
-    """Пошаговая настройка через Телеграм"""
+# --- ЦИКЛ ОХОТЫ ---
 
-    def step_1(m):
-        bot_tg.send_message(m.chat.id, "1️⃣ Наведи мышку на СУНДУК и подожди 3 сек...")
-        time.sleep(3)
-        p = pyautogui.position()
-        points['icon_click'] = [p.x, p.y]
-        # Делаем маленькую область вокруг клика для поиска иконки
-        areas['icon_area'] = [p.x - 20, p.y - 20, 40, 40]
-        bot_tg.send_message(m.chat.id, f"✅ Точка клика и зона поиска сохранены: {p.x}, {p.y}")
-
-        bot_tg.send_message(m.chat.id, "2️⃣ Теперь открой сундук. Наведи на ТАЙМЕР и подожди 3 сек...")
-        time.sleep(3)
-        p2 = pyautogui.position()
-        areas['timer_area'] = [p2.x - 30, p2.y - 10, 60, 20]
-        bot_tg.send_message(m.chat.id, "✅ Зона таймера сохранена!")
-
-        save_settings()
-        bot_tg.send_message(m.chat.id, "🚀 Настройка завершена! Можно жать ПУСК.", reply_markup=main_k())
-
-    step_1(message)
-
-
-# --- ГЛАВНЫЙ ЦИКЛ ОХОТЫ ---
-def hunt_logic():
+def hunt_thread():
     global is_hunting
     while True:
         if is_hunting and is_authorized:
             try:
-                # Если настроена точка клика - просто кликаем и проверяем
+                # Клик по сундуку, если есть координаты
                 if points['icon_click']:
                     pyautogui.click(points['icon_click'][0], points['icon_click'][1])
-                    time.sleep(2)
-                    # Тут можно добавить логику проверки цвета или шаблона
+                    time.sleep(1)
 
-                # Свайп вниз (листаем стрим)
+                # Свайп (прокрутка стримов)
                 w, h = pyautogui.size()
                 pyautogui.moveTo(w // 2, int(h * 0.8))
                 pyautogui.dragTo(w // 2, int(h * 0.2), duration=0.3)
                 time.sleep(stream_wait_time)
             except:
                 pass
-        time.sleep(0.5)
+        time.sleep(0.1)
 
 
-# --- GUI ---
-class HunterGui:
+# --- ИНТЕРФЕЙС TKINTER ---
+
+class VaksonApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Vakson Hunter")
-        self.root.geometry("300x400")
-        self.root.configure(bg='#1a1a1a')
+        self.root.title("Vakson Control")
+        self.root.geometry("320x450")
+        self.root.configure(bg='#0f0f12')
 
-        self.label = tk.Label(root, text="ВВЕДИТЕ КЛЮЧ", fg="white", bg="#1a1a1a", font=("Arial", 12))
-        self.label.pack(pady=20)
+        saved_key = load_session()
+        if saved_key:
+            self.auto_login(saved_key)
+        else:
+            self.draw_login()
 
-        self.entry = tk.Entry(root, justify='center')
-        self.entry.pack(pady=10)
+    def draw_login(self):
+        for w in self.root.winfo_children(): w.destroy()
+        tk.Label(self.root, text="🔑 АВТОРИЗАЦИЯ", fg="#ffcc00", bg="#0f0f12", font=("Impact", 18)).pack(pady=30)
+        self.key_entry = tk.Entry(self.root, justify='center', font=("Consolas", 12))
+        self.key_entry.pack(pady=10, padx=30, fill='x')
+        tk.Button(self.root, text="ПОДТВЕРДИТЬ", command=self.manual_login, bg="#ffcc00",
+                  font=("Arial", 10, "bold")).pack(pady=20, ipady=5, padx=50, fill='x')
 
-        self.btn = tk.Button(root, text="ВОЙТИ", command=self.check_auth, bg="#4CAF50", fg="white")
-        self.btn.pack(pady=20)
+    def auto_login(self, key):
+        threading.Thread(target=lambda: self.process_auth(key, silent=True), daemon=True).start()
 
-    def check_auth(self):
+    def manual_login(self):
+        key = self.key_entry.get().strip().upper()
+        if not key: return
+        self.process_auth(key, silent=False)
+
+    def process_auth(self, key, silent=False):
         global is_authorized
-        key = self.entry.get().strip().upper()
         try:
-            r = requests.get(f"{SERVER_URL}/check_key", params={"key": key, "hwid": get_hwid()}, timeout=5)
+            r = requests.get(f"{SERVER_URL}/check_key", params={"key": key, "hwid": get_hwid()}, headers=HEADERS,
+                             timeout=10)
             if r.status_code == 200:
                 is_authorized = True
-                messagebox.showinfo("Успех", "Авторизация пройдена!")
-                self.label.config(text="СИСТЕМА АКТИВНА", fg="#4CAF50")
-                self.btn.config(state="disabled")
+                save_session(key)
+                self.draw_main()
             else:
-                messagebox.showerror("Ошибка", "Неверный ключ")
+                if not silent:
+                    messagebox.showerror("Ошибка", "Ключ неверен или HWID занят")
+                else:
+                    self.draw_login()
         except:
-            messagebox.showerror("Ошибка", "Сервер не отвечает")
+            if not silent: messagebox.showerror("Ошибка", "Сервер спит или недоступен")
+
+    def draw_main(self):
+        for w in self.root.winfo_children(): w.destroy()
+        tk.Label(self.root, text="✅ СИСТЕМА LIVE", fg="#00ff00", bg="#0f0f12", font=("Impact", 20)).pack(pady=40)
+        tk.Button(self.root, text="ВЫЙТИ / СМЕНИТЬ КЛЮЧ", command=self.logout, bg="#333", fg="white").pack(
+            side='bottom', pady=20)
+
+    def logout(self):
+        if os.path.exists(SESSION_FILE): os.remove(SESSION_FILE)
+        os.execl(sys.executable, sys.executable, *sys.argv)
 
 
-# --- ОБРАБОТКА ТЕЛЕГРАМ ---
+# --- TELEGRAM HANDLERS ---
+
+def main_k():
+    m = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    m.add('▶️ ПУСК', '🛑 СТОП')
+    m.add('📸 Скриншот', '📊 Инфо')
+    m.add('⚙️ Настроить зоны')
+    return m
+
+
 @bot_tg.message_handler(commands=['start'])
-def welcome(m):
+def st(m):
     if not is_authorized:
-        bot_tg.send_message(m.chat.id, "🔒 **Доступ закрыт.**\nСначала введи ключ в программе на ПК.")
+        bot_tg.send_message(m.chat.id, "🔒 **Доступ ограничен.**\nВведите ключ в приложении на ПК для активации.")
     else:
-        bot_tg.send_message(m.chat.id, "👋 Привет! Я готов к работе.", reply_markup=main_k())
+        bot_tg.send_message(m.chat.id, "🤖 Vakson Hunter готов!", reply_markup=main_k())
 
 
 @bot_tg.message_handler(func=lambda m: True)
-def commands(m):
+def msg_handler(m):
     global is_hunting
     if not is_authorized:
         bot_tg.send_message(m.chat.id, "⚠️ Ожидаю авторизации в EXE...")
@@ -168,29 +213,30 @@ def commands(m):
 
     if m.text == '▶️ ПУСК':
         if not points['icon_click']:
-            bot_tg.send_message(m.chat.id, "❌ Сначала нажми '⚙️ Настройка зон'")
+            bot_tg.send_message(m.chat.id, "❌ Сначала нажми '⚙️ Настроить зоны'")
         else:
             is_hunting = True
-            bot_tg.send_message(m.chat.id, "🚀 Поехали!")
+            bot_tg.send_message(m.chat.id, "🚀 Охота началась!")
     elif m.text == '🛑 СТОП':
         is_hunting = False
-        bot_tg.send_message(m.chat.id, "🛑 Остановлено.")
-    elif m.text == '⚙️ Настройка зон':
-        threading.Thread(target=start_setup, args=(m,)).start()
+        bot_tg.send_message(m.chat.id, "🛑 Пауза.")
+    elif m.text == '⚙️ Настроить зоны':
+        threading.Thread(target=run_setup_logic, args=(m,), daemon=True).start()
     elif m.text == '📊 Инфо':
-        status = "✅ Работает" if is_hunting else "🛑 Пауза"
-        bot_tg.send_message(m.chat.id, f"Статус: {status}\nКлюч активен: Да\nHWID: {get_hwid()}")
+        status = "РАБОТАЕТ" if is_hunting else "ПАУЗА"
+        bot_tg.send_message(m.chat.id, f"📊 Статус: {status}\n📍 Точка: {points['icon_click']}")
 
 
-# --- ЗАПУСК ВСЕГО ---
+# --- ЗАПУСК ---
+
 if __name__ == "__main__":
-    # 1. Поток для охоты
-    threading.Thread(target=hunt_logic, daemon=True).start()
+    # Запуск логики охоты
+    threading.Thread(target=hunt_thread, daemon=True).start()
 
-    # 2. Поток для Телеграм (ОДИН РАЗ!)
+    # Запуск Telegram (Один раз, none_stop чтобы не вылетал)
     threading.Thread(target=lambda: bot_tg.infinity_polling(none_stop=True), daemon=True).start()
 
-    # 3. Главное окно (GUI)
+    # Запуск GUI
     root = tk.Tk()
-    app = HunterGui(root)
-    root.mainloop()& "C:\Program Files\Git\bin\git.exe" status
+    app = VaksonApp(root)
+    root.mainloop()
