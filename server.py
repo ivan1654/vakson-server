@@ -3,6 +3,7 @@ import json, os, uuid, datetime
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
+# Секретный ключ для сессий (авторизации в админке)
 app.secret_key = 'vakson_time_system_2026'
 KEYS_FILE = 'keys.json'
 ADMIN_PASSWORD = 'Vakson'
@@ -12,23 +13,19 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
-
 # --- ЛОГИКА БД ---
 def load_db():
     if not os.path.exists(KEYS_FILE):
         return {"licenses": {}, "logs": [], "design": {"title": "HUNTER PRO", "notification": "", "logo": ""}}
     try:
         with open(KEYS_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            return data
+            return json.load(f)
     except:
         return {"licenses": {}, "logs": [], "design": {"title": "HUNTER PRO", "notification": "", "logo": ""}}
-
 
 def save_db(data):
     with open(KEYS_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
-
 
 def add_log(message):
     db = load_db()
@@ -37,11 +34,10 @@ def add_log(message):
     db["logs"] = db["logs"][:50]
     save_db(db)
 
-
 # --- РОУТЫ ---
 @app.route('/')
-def index(): return redirect('/admin_panel')
-
+def index():
+    return redirect('/admin_panel')
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -56,7 +52,6 @@ def login():
             <input type="password" name="password" placeholder="Пароль" autofocus style="padding:12px; width:100%; margin:15px 0; background:#08080b; border:1px solid #444; color:white; border-radius:8px;">
             <button type="submit" style="width:100%; padding:12px; background:#ffcc00; border:none; font-weight:bold; border-radius:8px; cursor:pointer;">ВОЙТИ</button>
         </form></body>'''
-
 
 @app.route('/admin_panel')
 def admin():
@@ -85,14 +80,12 @@ def admin():
             <span class="navbar-brand fw-bold text-warning">🛡️ VAKSON MANAGEMENT</span>
             <a href="/logout" class="btn btn-outline-danger btn-sm">Выйти</a>
         </div></nav>
-
         <div class="container mt-4">
             <ul class="nav nav-tabs" id="myTab">
                 <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#keys">🔑 Ключи</button></li>
                 <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#design">🎨 Дизайн</button></li>
                 <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#logs">📜 Логи</button></li>
             </ul>
-
             <div class="tab-content pt-3">
                 <div class="tab-pane fade show active" id="keys">
                     <div class="card p-4 shadow-sm">
@@ -124,7 +117,6 @@ def admin():
                         </table>
                     </div>
                 </div>
-
                 <div class="tab-pane fade" id="design">
                     <div class="card p-4">
                         <form action="/update_design" method="POST" enctype="multipart/form-data">
@@ -145,7 +137,6 @@ def admin():
                         </form>
                     </div>
                 </div>
-
                 <div class="tab-pane fade" id="logs">
                     <div class="card p-4">
                         <div style="max-height: 350px; overflow-y: auto;">
@@ -160,41 +151,31 @@ def admin():
     </html>
     ''', db=db)
 
-
 # --- ОБРАБОТЧИКИ ---
 @app.route('/create_key', methods=['POST'])
 def create_key():
     db = load_db()
     user = request.form.get('user')
     days = int(request.form.get('duration'))
-
-    # Расчет даты окончания
     expiry_date = (datetime.datetime.now() + datetime.timedelta(days=days)).strftime("%Y-%m-%d %H:%M")
     if days > 1000: expiry_date = "LifeTime"
-
     new_k = str(uuid.uuid4()).split('-')[0].upper()
     db['licenses'][new_k] = {"user": user, "hwid": None, "expiry": expiry_date}
     save_db(db)
     add_log(f"Ключ {new_k} ({user}) выдан на {days} дн.")
     return redirect('/admin_panel')
 
-
 @app.route('/check_key')
 def check_key():
     key = request.args.get('key', '').upper()
     hwid = request.args.get('hwid', '')
     db = load_db()
-
     if key in db['licenses']:
         data = db['licenses'][key]
-
-        # Проверка срока действия
         if data['expiry'] != "LifeTime":
             expiry = datetime.datetime.strptime(data['expiry'], "%Y-%m-%d %H:%M")
             if datetime.datetime.now() > expiry:
                 return "KEY_EXPIRED", 403
-
-        # Проверка HWID
         if not data.get('hwid'):
             db['licenses'][key]['hwid'] = hwid
             save_db(db)
@@ -203,8 +184,11 @@ def check_key():
         return "HWID_MISMATCH", 403
     return "NOT_FOUND", 404
 
+@app.route('/get_config')
+def get_config():
+    db = load_db()
+    return jsonify(db.get('design', {}))
 
-# ... Остальные функции (update_design, delete, logout) ...
 @app.route('/update_design', methods=['POST'])
 def update_design():
     db = load_db()
@@ -215,21 +199,24 @@ def update_design():
         db['design']['logo'] = fname
     db['design']['title'] = request.form.get('title')
     db['design']['notification'] = request.form.get('notification')
-    save_db(db);
+    save_db(db)
     return redirect('/admin_panel')
-
 
 @app.route('/delete/<key>')
 def delete_key(key):
-    db = load_db();
-    db['licenses'].pop(key, None);
-    save_db(db);
+    db = load_db()
+    db['licenses'].pop(key, None)
+    save_db(db)
     return redirect('/admin_panel')
 
-
 @app.route('/logout')
-def logout(): session.clear(); return redirect('/login')
+def logout():
+    session.clear()
+    return redirect('/login')
 
-
+# --- ЗАПУСК (ИСПРАВЛЕНО ДЛЯ RENDER) ---
 if __name__ == '__main__':
-    app.run(port=5000)
+    # Слушаем порт, который дает Render, или 5000 по умолчанию
+    port = int(os.environ.get("PORT", 5000))
+    # 0.0.0.0 позволяет принимать внешние запросы
+    app.run(host='0.0.0.0', port=port)
