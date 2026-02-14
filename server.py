@@ -216,7 +216,6 @@ def logout():
 
 # --- ЗАПУСК (ИСПРАВЛЕНО ДЛЯ RENDER) ---
 if __name__ == '__main__':
-    # Слушаем порт, который дает Render, или 5000 по умолчанию
+    import os
     port = int(os.environ.get("PORT", 5000))
-    # 0.0.0.0 позволяет принимать внешние запросы
     app.run(host='0.0.0.0', port=port)

@@ -14,8 +14,9 @@ from telebot import types
 from PIL import Image, ImageTk
 from io import BytesIO
 
-# --- КОНФИГУРАЦИЯ (ВСТАВЬ СВОИ ДАННЫЕ) ---
-SERVER_URL = "https://d91d-176-98-25-206.ngrok-free.app" # ТВОЯ ССЫЛКА NGROK
+# --- КОНФИГУРАЦИЯ ---
+# ТВОЯ АКТУАЛЬНАЯ ССЫЛКА НА RENDER
+SERVER_URL = "https://vakson-server.onrender.com"
 HEADERS = {"ngrok-skip-browser-warning": "true"}
 API_TOKEN = '8463606697:AAEDD-2_SE3Fz369yw8PpfqwYLJtmp8Z5_Q'
 CHAT_ID = '1277953361'
@@ -64,7 +65,6 @@ def load_settings():
                 areas.update(data.get('areas', {}))
                 points.update(data.get('points', {}))
                 stream_wait_time = data.get('wait', 5)
-                # Загрузка иконки если есть область
                 if areas['icon_area']:
                     samples['icon'] = pyautogui.screenshot(region=areas['icon_area'])
         except: pass
@@ -186,13 +186,15 @@ class HunterGui:
     def auth(self):
         key = self.key_ent.get().strip().upper()
         try:
+            # Запрос к твоему новому серверу
             r = requests.get(f"{SERVER_URL}/check_key", params={"key": key, "hwid": get_hwid()}, headers=HEADERS, timeout=7)
             if r.status_code == 200:
                 self.show_main()
                 threading.Thread(target=lambda: bot_tg.infinity_polling(), daemon=True).start()
                 threading.Thread(target=hunt_logic_thread, daemon=True).start()
             else: messagebox.showerror("Ошибка", "Ключ неверен или HWID не совпадает")
-        except: messagebox.showerror("Ошибка", "Нет связи с сервером (Проверь ngrok)")
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Нет связи с сервером Render!\nПроверь статус в панели Render.")
 
     def show_main(self):
         for w in self.root.winfo_children(): w.destroy()
@@ -215,7 +217,7 @@ class HunterGui:
     def off(self):
         global is_hunting; is_hunting = False; self.stat_btn.config(text="СТАТУС: ПАУЗА", bg='#16161d')
 
-# --- ТЕЛЕГРАМ ОБРАБОТЧИКИ ---
+# --- ТЕЛЕГРАМ ОБРАБОТЧИКИ (ОСТАВЛЕНО БЕЗ ИЗМЕНЕНИЙ) ---
 
 @bot_tg.message_handler(commands=['start'])
 def st(m):
@@ -224,7 +226,6 @@ def st(m):
 @bot_tg.message_handler(func=lambda m: True)
 def h(m):
     global is_hunting, stream_wait_time
-
     if m.text == '▶️ ПУСК':
         is_hunting = True; bot_tg.send_message(m.chat.id, "🚀 Старт!")
     elif m.text == '🛑 СТОП':
@@ -243,7 +244,6 @@ def h(m):
         msg += f"• Клик: <code>{points['icon_click']}</code>\n\n"
         msg += f"⏳ Ожидание: <b>{stream_wait_time}с</b>"
         bot_tg.send_message(m.chat.id, msg, parse_mode="HTML")
-
     elif m.text == '🛠 Взаимодействие':
         bot_tg.send_message(m.chat.id, "Меню:", reply_markup=interact_k())
     elif m.text == '⚙️ Настройки координат':
@@ -256,10 +256,8 @@ def h(m):
         for a in areas: areas[a] = None
         if os.path.exists(SETTINGS_FILE): os.remove(SETTINGS_FILE)
         bot_tg.send_message(m.chat.id, "🗑 Очищено!")
-
     elif m.text == '✏️ Ввод ВРУЧНУЮ':
         bot_tg.send_message(m.chat.id, "Формат: <code>таймер x y w h</code>", parse_mode="HTML")
-
     elif m.text.startswith(('таймер ', 'табло ', 'сундук ')):
         try:
             p = m.text.split(); coords = [int(p[1]), int(p[2]), int(p[3]), int(p[4])]
@@ -268,13 +266,11 @@ def h(m):
             elif 'сундук' in p[0]: areas['icon_area'] = coords
             bot_tg.send_message(m.chat.id, f"✅ Зона {p[0]} сохранена!")
         except: bot_tg.send_message(m.chat.id, "❌ Ошибка формата!")
-
     elif m.text.startswith('клик '):
         try:
             p = m.text.split(); points['icon_click'] = [int(p[1]), int(p[2])]
             bot_tg.send_message(m.chat.id, "✅ Точка клика сохранена!")
         except: bot_tg.send_message(m.chat.id, "❌ Ошибка!")
-
     elif m.text in ['📦 Координаты сундука', '🔘 Координаты табло', '⏱ Координаты таймера']:
         bot_tg.send_message(m.chat.id, "⬆️ Левый Верх (5с)"); time.sleep(5); p1 = pyautogui.position()
         bot_tg.send_message(m.chat.id, "⬇️ Правый Низ (5с)"); time.sleep(5); p2 = pyautogui.position()
@@ -285,12 +281,10 @@ def h(m):
         elif 'табло' in m.text: areas['btn_area'] = [x, y, w, h]
         elif 'таймера' in m.text: areas['timer_area'] = [x, y, w, h]
         bot_tg.send_message(m.chat.id, "✅ Настроено!")
-
     elif m.text == '📍 Точка клика':
         bot_tg.send_message(m.chat.id, "📍 Наведи на сундук (5с)"); time.sleep(5)
         points['icon_click'] = [pyautogui.position().x, pyautogui.position().y]
         bot_tg.send_message(m.chat.id, "✅ Точка сохранена!")
-
     elif m.text == '⏳ Время на стриме':
         km = types.InlineKeyboardMarkup(row_width=4)
         btns = [types.InlineKeyboardButton(f"{t}с", callback_data=f"w_{t}") for t in [5, 10, 15, 20, 25, 30, 60]]
